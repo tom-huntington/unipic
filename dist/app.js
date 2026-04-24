@@ -5,6 +5,7 @@ const resultsList = document.querySelector("#results");
 const status = document.querySelector("#status");
 const clearButton = document.querySelector("#clear");
 const EXCLUDED_PREFIX_TERMS = ["cjk", "unified"];
+const FALLBACK_RESULT_LIMIT = 32;
 
 const state = {
   meta: null,
@@ -92,6 +93,7 @@ function search(rawQuery) {
     return [];
   }
 
+  const resultLimit = getResultLimit();
   const terms = tokenizeQuery(rawQuery);
   const excludedPrefixTerms = terms.filter(matchesExcludedPrefix);
   const searchableTerms = terms.filter((term) => !matchesExcludedPrefix(term));
@@ -100,17 +102,20 @@ function search(rawQuery) {
     return [];
   }
 
-  const results = intersectQueryTerms(searchableTerms).map(readEntry);
-  if (!results.length && rawQuery.trim()) {
+  const results = intersectQueryTerms(searchableTerms)
+    .slice(0, resultLimit)
+    .map(readEntry);
+  if (results.length < resultLimit && rawQuery.trim()) {
     const codepointMatch = lookupExactCharacter(rawQuery.trim());
-    if (codepointMatch) {
+    if (codepointMatch && !results.some((entry) => entry.index === codepointMatch.index)) {
       results.push(codepointMatch);
     }
   }
 
-  status.textContent = formatSearchStatus(results.length, excludedPrefixTerms);
+  const limitedResults = results.slice(0, resultLimit);
+  status.textContent = formatSearchStatus(limitedResults.length, excludedPrefixTerms);
 
-  return results;
+  return limitedResults;
 }
 
 function normalize(value) {
@@ -136,14 +141,15 @@ function intersectQueryTerms(terms) {
     return [];
   }
 
-  const first = lookupTrie(terms[0], null, Number.POSITIVE_INFINITY);
+  const resultLimit = getResultLimit();
+  const first = lookupTrie(terms[0], null, resultLimit);
   if (!first.length) {
     return [];
   }
 
   let matches = first;
   for (let i = 1; i < terms.length; i += 1) {
-    const limit = i === terms.length - 1 ? state.meta.resultLimit : Number.POSITIVE_INFINITY;
+    const limit = i === terms.length - 1 ? resultLimit : Number.POSITIVE_INFINITY;
     const next = lookupTrie(terms[i], new Set(matches), limit);
     if (!next.length) {
       return [];
@@ -154,7 +160,7 @@ function intersectQueryTerms(terms) {
   return matches;
 }
 
-function lookupTrie(query, allowedSet = null, limit = state.meta.resultLimit) {
+function lookupTrie(query, allowedSet = null, limit = getResultLimit()) {
   const trieView = new DataView(state.trieBuffer);
   const meta = state.meta.trie;
   const nodeIndex = findNodeIndex(trieView, meta, query);
@@ -243,9 +249,16 @@ function collectNodeMatches(view, meta, nodeIndex, limit, allowedSet = null) {
       continue;
     }
 
+    if (results.length >= limit) {
+      break;
+    }
+
     stack.push({ nodeIndex: current.nodeIndex, expanded: true });
     const children = getNodeChildren(view, meta, current.nodeIndex);
     for (let i = children.length - 1; i >= 0; i -= 1) {
+      if (results.length + stack.length >= limit) {
+        break;
+      }
       stack.push({ nodeIndex: children[i], expanded: false });
     }
   }
@@ -344,11 +357,12 @@ function formatSearchStatus(resultCount, excludedPrefixTerms) {
 }
 
 function renderResults(results) {
-  state.results = results;
-  state.activeIndex = results.length ? 0 : -1;
+  const limitedResults = results.slice(0, getResultLimit());
+  state.results = limitedResults;
+  state.activeIndex = limitedResults.length ? 0 : -1;
   resultsList.textContent = "";
 
-  for (const [index, entry] of results.entries()) {
+  for (const [index, entry] of limitedResults.entries()) {
     const fragment = template.content.cloneNode(true);
     const button = fragment.querySelector(".result-button");
     const glyph = fragment.querySelector(".glyph");
@@ -366,6 +380,10 @@ function renderResults(results) {
 
     resultsList.append(fragment);
   }
+}
+
+function getResultLimit() {
+  return state.meta?.resultLimit ?? FALLBACK_RESULT_LIMIT;
 }
 
 function setActiveIndex(index) {
