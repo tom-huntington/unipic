@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Unicode Picker</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Unicode Picker</p>
+        <h1>Search a name, hit enter, copy the character.</h1>
+      </header>
+
+      <section class="search-panel">
+        <label class="search-label" for="query">Search</label>
+        <div class="search-wrap">
+          <input
+            id="query"
+            class="search-input"
+            type="search"
+            disabled
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Try arrow, greek small letter pi, or u+2192"
+          />
+          <button id="clear" class="clear-button" type="button" aria-label="Clear search" disabled>Clear</button>
+        </div>
+        <p id="status" class="status">Loading Unicode data…</p>
+        <ul id="results" class="results" role="listbox" aria-label="Search results"></ul>
+      </section>
+    </main>
+
+    <template id="result-template">
+      <li class="result-row" role="option">
+        <button class="result-button" type="button">
+          <span class="glyph"></span>
+          <span class="copy-meta">
+            <span class="title"></span>
+            <span class="detail"></span>
+          </span>
+          <span class="copy-hint">Copy</span>
+        </button>
+      </li>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

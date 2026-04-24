@@ -1,0 +1,23 @@
+{
+  "version": "17.0.0",
+  "resultLimit": 64,
+  "entries": {
+    "count": 159862,
+    "recordSize": 28,
+    "headerSize": 8,
+    "file": "entries.bin"
+  },
+  "trie": {
+    "nodeCount": 1178593,
+    "edgeCount": 1178592,
+    "payloadCount": 2938645,
+    "headerSize": 16,
+    "nodeSize": 12,
+    "edgeSize": 5,
+    "payloadIndexSize": 3,
+    "file": "trie.bin"
+  },
+  "strings": {
+    "file": "strings.bin"
+  }
+}
