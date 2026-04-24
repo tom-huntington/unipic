@@ -91,13 +91,13 @@ function search(rawQuery) {
     return [];
   }
 
-  const normalized = normalize(rawQuery);
-  if (!normalized) {
+  const terms = tokenizeQuery(rawQuery);
+  if (!terms.length) {
     status.textContent = `Loaded ${state.meta.entries.count.toLocaleString()} entries.`;
     return [];
   }
 
-  const results = lookupTrie(normalized);
+  const results = intersectQueryTerms(terms).map(readEntry);
   if (!results.length && rawQuery.trim()) {
     const codepointMatch = lookupExactCharacter(rawQuery.trim());
     if (codepointMatch) {
@@ -121,6 +121,42 @@ function normalize(value) {
     .trim();
 }
 
+function tokenizeQuery(rawQuery) {
+  const normalized = normalize(rawQuery);
+  if (!normalized) {
+    return [];
+  }
+
+  return [...new Set(normalized.split(" ").filter(Boolean))];
+}
+
+function intersectQueryTerms(terms) {
+  if (!terms.length) {
+    return [];
+  }
+
+  const first = lookupTrie(terms[0]);
+  if (!first.length) {
+    return [];
+  }
+
+  let matches = first;
+  for (let i = 1; i < terms.length; i += 1) {
+    const next = lookupTrie(terms[i]);
+    if (!next.length) {
+      return [];
+    }
+
+    const nextSet = new Set(next);
+    matches = matches.filter((index) => nextSet.has(index));
+    if (!matches.length) {
+      return [];
+    }
+  }
+
+  return matches;
+}
+
 function lookupTrie(query) {
   const trieView = new DataView(state.trieBuffer);
   const meta = state.meta.trie;
@@ -135,8 +171,7 @@ function lookupTrie(query) {
     nodeIndex = found;
   }
 
-  const payload = getNodePayload(trieView, meta, nodeIndex);
-  return payload.map(readEntry);
+  return getNodePayload(trieView, meta, nodeIndex);
 }
 
 function findEdge(view, meta, nodeIndex, code) {

@@ -331,23 +331,15 @@ fn collectTerms(
 ) !void {
     const normalized = try normalizeText(arena_allocator, text);
     if (normalized.len > 0) {
-        try addTermAndSuffixes(allocator, terms, normalized);
+        var words = std.mem.splitScalar(u8, normalized, ' ');
+        while (words.next()) |word| {
+            try addUniqueTerm(allocator, terms, word);
+        }
     }
 
     const code_term = try std.fmt.allocPrint(arena_allocator, "u+{x}", .{codepoint});
     const normalized_code = try normalizeText(arena_allocator, code_term);
     try addUniqueTerm(allocator, terms, normalized_code);
-}
-
-fn addTermAndSuffixes(allocator: std.mem.Allocator, terms: *std.ArrayList([]const u8), normalized: []const u8) !void {
-    try addUniqueTerm(allocator, terms, normalized);
-
-    var index: usize = 0;
-    while (index < normalized.len) : (index += 1) {
-        if (normalized[index] == ' ' and index + 1 < normalized.len) {
-            try addUniqueTerm(allocator, terms, normalized[index + 1 ..]);
-        }
-    }
 }
 
 fn addUniqueTerm(allocator: std.mem.Allocator, terms: *std.ArrayList([]const u8), term: []const u8) !void {

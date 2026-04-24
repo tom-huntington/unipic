@@ -8,9 +8,9 @@
     "file": "entries.bin"
   },
   "trie": {
-    "nodeCount": 1178593,
-    "edgeCount": 1178592,
-    "payloadCount": 2938645,
+    "nodeCount": 316451,
+    "edgeCount": 316450,
+    "payloadCount": 847133,
     "headerSize": 16,
     "nodeSize": 12,
     "edgeSize": 5,
