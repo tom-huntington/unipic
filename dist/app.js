@@ -136,43 +136,49 @@ function intersectQueryTerms(terms) {
     return [];
   }
 
-  const first = lookupTrie(terms[0]);
+  const first = lookupTrie(terms[0], null, Number.POSITIVE_INFINITY);
   if (!first.length) {
     return [];
   }
 
   let matches = first;
   for (let i = 1; i < terms.length; i += 1) {
-    const next = lookupTrie(terms[i]);
+    const limit = i === terms.length - 1 ? state.meta.resultLimit : Number.POSITIVE_INFINITY;
+    const next = lookupTrie(terms[i], new Set(matches), limit);
     if (!next.length) {
       return [];
     }
-
-    const nextSet = new Set(next);
-    matches = matches.filter((index) => nextSet.has(index));
-    if (!matches.length) {
-      return [];
-    }
+    matches = next;
   }
 
   return matches;
 }
 
-function lookupTrie(query) {
+function lookupTrie(query, allowedSet = null, limit = state.meta.resultLimit) {
   const trieView = new DataView(state.trieBuffer);
   const meta = state.meta.trie;
+  const nodeIndex = findNodeIndex(trieView, meta, query);
+  if (nodeIndex === -1) {
+    return [];
+  }
+
+  const effectiveLimit = Number.isFinite(limit) ? limit : Number.MAX_SAFE_INTEGER;
+  return collectNodeMatches(trieView, meta, nodeIndex, effectiveLimit, allowedSet);
+}
+
+function findNodeIndex(view, meta, query) {
   let nodeIndex = 0;
 
   for (let i = 0; i < query.length; i += 1) {
     const code = query.charCodeAt(i);
-    const found = findEdge(trieView, meta, nodeIndex, code);
+    const found = findEdge(view, meta, nodeIndex, code);
     if (found === -1) {
-      return [];
+      return -1;
     }
     nodeIndex = found;
   }
 
-  return collectNodeMatches(trieView, meta, nodeIndex, state.meta.resultLimit);
+  return nodeIndex;
 }
 
 function findEdge(view, meta, nodeIndex, code) {
@@ -215,7 +221,7 @@ function getNodePayload(view, meta, nodeIndex) {
   return results;
 }
 
-function collectNodeMatches(view, meta, nodeIndex, limit) {
+function collectNodeMatches(view, meta, nodeIndex, limit, allowedSet = null) {
   const results = [];
   const seen = new Set();
   const stack = [{ nodeIndex, expanded: false }];
@@ -225,7 +231,7 @@ function collectNodeMatches(view, meta, nodeIndex, limit) {
     if (current.expanded) {
       const payload = getNodePayload(view, meta, current.nodeIndex);
       for (const index of payload) {
-        if (seen.has(index)) {
+        if ((allowedSet && !allowedSet.has(index)) || seen.has(index)) {
           continue;
         }
         seen.add(index);
