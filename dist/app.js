@@ -281,7 +281,7 @@ async function copyEntry(entry) {
 }
 
 function visibleGlyph(entry) {
-  const invisibleCategories = new Set(["ZERO WIDTH", "COMBINING", "CONTROL"]);
+  const invisibleCategories = ["ZERO WIDTH", "COMBINING", "CONTROL"];
   if (invisibleCategories.some((prefix) => entry.name.startsWith(prefix))) {
     return formatCodepoint(entry.codepoint);
   }
