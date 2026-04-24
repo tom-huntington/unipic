@@ -5,7 +5,9 @@
     "count": 159862,
     "recordSize": 28,
     "headerSize": 8,
-    "file": "entries.bin"
+    "file": "entries.bin.gz",
+    "fallbackFile": "entries.bin",
+    "compression": "gzip"
   },
   "trie": {
     "nodeCount": 316446,
@@ -15,9 +17,13 @@
     "nodeSize": 14,
     "edgeSize": 5,
     "payloadIndexSize": 3,
-    "file": "trie.bin"
+    "file": "trie.bin.gz",
+    "fallbackFile": "trie.bin",
+    "compression": "gzip"
   },
   "strings": {
-    "file": "strings.bin"
+    "file": "strings.bin.gz",
+    "fallbackFile": "strings.bin",
+    "compression": "gzip"
   }
 }

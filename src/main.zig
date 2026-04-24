@@ -426,13 +426,14 @@ fn writeEntriesFile(allocator: std.mem.Allocator, out_dir: []const u8, entries: 
         try appendU32(&bytes, allocator, block_ref.len);
     }
 
-    var file = try std.fs.cwd().createFile(entries_path, .{ .truncate = true });
-    defer file.close();
-    try file.writeAll(bytes.items);
-
-    var strings_file = try std.fs.cwd().createFile(strings_path, .{ .truncate = true });
-    defer strings_file.close();
-    try strings_file.writeAll(strings.items);
+    try std.fs.cwd().writeFile(.{
+        .sub_path = entries_path,
+        .data = bytes.items,
+    });
+    try std.fs.cwd().writeFile(.{
+        .sub_path = strings_path,
+        .data = strings.items,
+    });
 }
 
 fn writeTrieFile(allocator: std.mem.Allocator, out_dir: []const u8, nodes: []const TrieNodeBuilder) !void {
@@ -479,9 +480,10 @@ fn writeTrieFile(allocator: std.mem.Allocator, out_dir: []const u8, nodes: []con
         }
     }
 
-    var file = try std.fs.cwd().createFile(trie_path, .{ .truncate = true });
-    defer file.close();
-    try file.writeAll(bytes.items);
+    try std.fs.cwd().writeFile(.{
+        .sub_path = trie_path,
+        .data = bytes.items,
+    });
 }
 
 fn writeMetaFile(
@@ -508,7 +510,9 @@ fn writeMetaFile(
         \\    "count": {d},
         \\    "recordSize": {d},
         \\    "headerSize": {d},
-        \\    "file": "entries.bin"
+        \\    "file": "entries.bin.gz",
+        \\    "fallbackFile": "entries.bin",
+        \\    "compression": "gzip"
         \\  }},
         \\  "trie": {{
         \\    "nodeCount": {d},
@@ -518,10 +522,14 @@ fn writeMetaFile(
         \\    "nodeSize": {d},
         \\    "edgeSize": {d},
         \\    "payloadIndexSize": {d},
-        \\    "file": "trie.bin"
+        \\    "file": "trie.bin.gz",
+        \\    "fallbackFile": "trie.bin",
+        \\    "compression": "gzip"
         \\  }},
         \\  "strings": {{
-        \\    "file": "strings.bin"
+        \\    "file": "strings.bin.gz",
+        \\    "fallbackFile": "strings.bin",
+        \\    "compression": "gzip"
         \\  }}
         \\}}
     , .{

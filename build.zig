@@ -1,8 +1,10 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const builtin = @import("builtin");
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const out_dir = "dist/data";
 
     const exe = b.addExecutable(.{
         .name = "unicode-picker-data",
@@ -20,9 +22,23 @@ pub fn build(b: *std.Build) void {
         run.addArgs(args);
     } else {
         run.addArg("UCD");
-        run.addArg("dist/data");
+        run.addArg(out_dir);
     }
 
     const run_step = b.step("run", "Generate unicode picker data");
-    run_step.dependOn(&run.step);
+    if (builtin.os.tag == .windows) {
+        const compress = b.addSystemCommand(&.{
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "scripts/compress-data.ps1",
+            out_dir,
+        });
+        compress.step.dependOn(&run.step);
+        run_step.dependOn(&compress.step);
+    } else {
+        run_step.dependOn(&run.step);
+    }
 }

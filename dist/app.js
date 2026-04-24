@@ -6,6 +6,7 @@ const status = document.querySelector("#status");
 const clearButton = document.querySelector("#clear");
 const EXCLUDED_PREFIX_TERMS = ["cjk", "unified"];
 const FALLBACK_RESULT_LIMIT = 32;
+const supportsDecompressionStream = typeof DecompressionStream === "function";
 
 const state = {
   meta: null,
@@ -22,9 +23,9 @@ async function init() {
   try {
     const meta = await fetchJson("./data/meta.json");
     const [trieBuffer, entriesBuffer, stringsBuffer] = await Promise.all([
-      fetchBuffer(`./data/${meta.trie.file}`),
-      fetchBuffer(`./data/${meta.entries.file}`),
-      fetchBuffer(`./data/${meta.strings.file}`),
+      fetchDataBuffer(meta.trie),
+      fetchDataBuffer(meta.entries),
+      fetchDataBuffer(meta.strings),
     ]);
 
     state.meta = meta;
@@ -86,6 +87,32 @@ async function fetchBuffer(url) {
     throw new Error(`Failed to fetch ${url}`);
   }
   return response.arrayBuffer();
+}
+
+async function fetchDataBuffer(spec) {
+  if (spec.compression && supportsDecompressionStream) {
+    try {
+      return await fetchCompressedBuffer(`./data/${spec.file}`, spec.compression);
+    } catch (error) {
+      if (!spec.fallbackFile) {
+        throw error;
+      }
+      console.warn(`Falling back to ${spec.fallbackFile} after compressed load failed.`, error);
+    }
+  }
+
+  const fallbackFile = spec.fallbackFile ?? spec.file;
+  return fetchBuffer(`./data/${fallbackFile}`);
+}
+
+async function fetchCompressedBuffer(url, compression) {
+  const compressed = await fetchBuffer(url);
+  return decompressBuffer(compressed, compression);
+}
+
+async function decompressBuffer(buffer, compression) {
+  const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream(compression));
+  return new Response(stream).arrayBuffer();
 }
 
 function search(rawQuery) {

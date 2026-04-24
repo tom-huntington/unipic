@@ -36,7 +36,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Publish the built static site
+          # Publish the prebuilt static site checked into dist/.
+          # Dataset generation happens locally, not in GitHub Actions.
           path: 'dist'
       - name: Deploy to GitHub Pages
         id: deployment
