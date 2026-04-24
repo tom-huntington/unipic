@@ -169,25 +169,30 @@ function intersectQueryTerms(terms) {
   }
 
   const resultLimit = getResultLimit();
-  const first = lookupTrie(terms[0], null, resultLimit);
-  if (!first.length) {
-    return [];
+  if (terms.length === 1) {
+    return lookupTriePrefix(terms[0], null, resultLimit);
   }
 
-  let matches = first;
-  for (let i = 1; i < terms.length; i += 1) {
-    const limit = i === terms.length - 1 ? resultLimit : Number.POSITIVE_INFINITY;
-    const next = lookupTrie(terms[i], new Set(matches), limit);
-    if (!next.length) {
+  let allowedSet = null;
+  for (let i = 0; i < terms.length - 1; i += 1) {
+    const exactMatches = lookupTrieExact(terms[i]);
+    if (!exactMatches.length) {
       return [];
     }
-    matches = next;
+
+    allowedSet = allowedSet
+      ? intersectSets(allowedSet, exactMatches)
+      : new Set(exactMatches);
+
+    if (!allowedSet.size) {
+      return [];
+    }
   }
 
-  return matches;
+  return lookupTriePrefix(terms[terms.length - 1], allowedSet, resultLimit);
 }
 
-function lookupTrie(query, allowedSet = null, limit = getResultLimit()) {
+function lookupTriePrefix(query, allowedSet = null, limit = getResultLimit()) {
   const trieView = new DataView(state.trieBuffer);
   const meta = state.meta.trie;
   const nodeIndex = findNodeIndex(trieView, meta, query);
@@ -197,6 +202,27 @@ function lookupTrie(query, allowedSet = null, limit = getResultLimit()) {
 
   const effectiveLimit = Number.isFinite(limit) ? limit : Number.MAX_SAFE_INTEGER;
   return collectNodeMatches(trieView, meta, nodeIndex, effectiveLimit, allowedSet);
+}
+
+function lookupTrieExact(query) {
+  const trieView = new DataView(state.trieBuffer);
+  const meta = state.meta.trie;
+  const nodeIndex = findNodeIndex(trieView, meta, query);
+  if (nodeIndex === -1) {
+    return [];
+  }
+
+  return getNodePayload(trieView, meta, nodeIndex);
+}
+
+function intersectSets(existing, values) {
+  const next = new Set();
+  for (const value of values) {
+    if (existing.has(value)) {
+      next.add(value);
+    }
+  }
+  return next;
 }
 
 function findNodeIndex(view, meta, query) {
