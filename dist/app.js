@@ -4,6 +4,7 @@ const queryInput = document.querySelector("#query");
 const resultsList = document.querySelector("#results");
 const status = document.querySelector("#status");
 const clearButton = document.querySelector("#clear");
+const EXCLUDED_PREFIX_TERMS = ["cjk", "unified"];
 
 const state = {
   meta: null,
@@ -92,12 +93,14 @@ function search(rawQuery) {
   }
 
   const terms = tokenizeQuery(rawQuery);
+  const excludedPrefixTerms = terms.filter(matchesExcludedPrefix);
+  const searchableTerms = terms.filter((term) => !matchesExcludedPrefix(term));
   if (!terms.length) {
     status.textContent = `Loaded ${state.meta.entries.count.toLocaleString()} entries.`;
     return [];
   }
 
-  const results = intersectQueryTerms(terms).map(readEntry);
+  const results = intersectQueryTerms(searchableTerms).map(readEntry);
   if (!results.length && rawQuery.trim()) {
     const codepointMatch = lookupExactCharacter(rawQuery.trim());
     if (codepointMatch) {
@@ -105,9 +108,7 @@ function search(rawQuery) {
     }
   }
 
-  status.textContent = results.length
-    ? `${results.length} result${results.length === 1 ? "" : "s"}`
-    : "No matches.";
+  status.textContent = formatSearchStatus(results.length, excludedPrefixTerms);
 
   return results;
 }
@@ -171,7 +172,7 @@ function lookupTrie(query) {
     nodeIndex = found;
   }
 
-  return getNodePayload(trieView, meta, nodeIndex);
+  return collectNodeMatches(trieView, meta, nodeIndex, state.meta.resultLimit);
 }
 
 function findEdge(view, meta, nodeIndex, code) {
@@ -203,7 +204,7 @@ function findEdge(view, meta, nodeIndex, code) {
 function getNodePayload(view, meta, nodeIndex) {
   const nodeOffset = meta.headerSize + nodeIndex * meta.nodeSize;
   const payloadStart = view.getUint32(nodeOffset + 6, true);
-  const payloadCount = view.getUint16(nodeOffset + 10, true);
+  const payloadCount = view.getUint32(nodeOffset + 10, true);
   const payloadBase =
     meta.headerSize + meta.nodeCount * meta.nodeSize + meta.edgeCount * meta.edgeSize;
 
@@ -212,6 +213,52 @@ function getNodePayload(view, meta, nodeIndex) {
     results.push(readUint24(view, payloadBase + (payloadStart + i) * meta.payloadIndexSize));
   }
   return results;
+}
+
+function collectNodeMatches(view, meta, nodeIndex, limit) {
+  const results = [];
+  const seen = new Set();
+  const stack = [{ nodeIndex, expanded: false }];
+
+  while (stack.length && results.length < limit) {
+    const current = stack.pop();
+    if (current.expanded) {
+      const payload = getNodePayload(view, meta, current.nodeIndex);
+      for (const index of payload) {
+        if (seen.has(index)) {
+          continue;
+        }
+        seen.add(index);
+        results.push(index);
+        if (results.length >= limit) {
+          return results;
+        }
+      }
+      continue;
+    }
+
+    stack.push({ nodeIndex: current.nodeIndex, expanded: true });
+    const children = getNodeChildren(view, meta, current.nodeIndex);
+    for (let i = children.length - 1; i >= 0; i -= 1) {
+      stack.push({ nodeIndex: children[i], expanded: false });
+    }
+  }
+
+  return results;
+}
+
+function getNodeChildren(view, meta, nodeIndex) {
+  const nodeOffset = meta.headerSize + nodeIndex * meta.nodeSize;
+  const edgeStart = view.getUint32(nodeOffset, true);
+  const edgeCount = view.getUint16(nodeOffset + 4, true);
+  const edgeBase = meta.headerSize + meta.nodeCount * meta.nodeSize;
+
+  const children = [];
+  for (let i = 0; i < edgeCount; i += 1) {
+    const edgeOffset = edgeBase + (edgeStart + i) * meta.edgeSize;
+    children.push(view.getUint32(edgeOffset + 1, true));
+  }
+  return children;
 }
 
 function readUint24(view, offset) {
@@ -270,6 +317,24 @@ function lookupExactCharacter(query) {
   }
 
   return null;
+}
+
+function matchesExcludedPrefix(term) {
+  return EXCLUDED_PREFIX_TERMS.some(
+    (excluded) => excluded.startsWith(term) || term.startsWith(excluded),
+  );
+}
+
+function formatSearchStatus(resultCount, excludedPrefixTerms) {
+  const resultText = resultCount
+    ? `${resultCount} result${resultCount === 1 ? "" : "s"}`
+    : "No matches.";
+  if (!excludedPrefixTerms.length) {
+    return resultText;
+  }
+
+  const terms = excludedPrefixTerms.map((term) => `"${term}"`).join(", ");
+  return `${resultText} Prefixes for CJK and UNIFIED are not indexed (${terms}).`;
 }
 
 function renderResults(results) {

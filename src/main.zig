@@ -1,9 +1,10 @@
 const std = @import("std");
 
-const result_limit = 64;
+const result_limit = 32;
+const excluded_trie_terms = [_][]const u8{ "cjk", "unified" };
 const entry_record_size = 28;
 const trie_header_size = 16;
-const trie_node_size = 12;
+const trie_node_size = 14;
 const trie_edge_size = 5;
 const trie_payload_index_size = 3;
 const entries_header_size = 8;
@@ -333,6 +334,7 @@ fn collectTerms(
     if (normalized.len > 0) {
         var words = std.mem.splitScalar(u8, normalized, ' ');
         while (words.next()) |word| {
+            if (isExcludedTrieTerm(word)) continue;
             try addUniqueTerm(allocator, terms, word);
         }
     }
@@ -340,6 +342,13 @@ fn collectTerms(
     const code_term = try std.fmt.allocPrint(arena_allocator, "u+{x}", .{codepoint});
     const normalized_code = try normalizeText(arena_allocator, code_term);
     try addUniqueTerm(allocator, terms, normalized_code);
+}
+
+fn isExcludedTrieTerm(term: []const u8) bool {
+    for (excluded_trie_terms) |excluded| {
+        if (std.mem.eql(u8, term, excluded)) return true;
+    }
+    return false;
 }
 
 fn addUniqueTerm(allocator: std.mem.Allocator, terms: *std.ArrayList([]const u8), term: []const u8) !void {
@@ -377,15 +386,15 @@ fn trieInsert(
         }
 
         node_index = next_index.?;
-        try appendPayload(allocator, &trie_nodes.items[node_index].payload, entry_index);
     }
+
+    try appendPayload(allocator, &trie_nodes.items[node_index].payload, entry_index);
 }
 
 fn appendPayload(allocator: std.mem.Allocator, payload: *std.ArrayList(u32), value: u32) !void {
     for (payload.items) |existing| {
         if (existing == value) return;
     }
-    if (payload.items.len >= result_limit) return;
     try payload.append(allocator, value);
 }
 
@@ -451,7 +460,7 @@ fn writeTrieFile(allocator: std.mem.Allocator, out_dir: []const u8, nodes: []con
         try appendU32(&bytes, allocator, running_edge_offset);
         try appendU16(&bytes, allocator, @intCast(node.children.items.len));
         try appendU32(&bytes, allocator, running_payload_offset);
-        try appendU16(&bytes, allocator, @intCast(node.payload.items.len));
+        try appendU32(&bytes, allocator, @intCast(node.payload.items.len));
 
         running_edge_offset += @intCast(node.children.items.len);
         running_payload_offset += @intCast(node.payload.items.len);
