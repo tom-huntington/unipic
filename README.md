@@ -38,8 +38,9 @@ The current generator indexes:
 
 It emits a packed trie with:
 
-- 12-byte node records
+- 14-byte node records
 - 5-byte edge records
-- 3-byte payload indices
+- 3-byte payload values
+- range markers for selected high-frequency word payloads
 
 That keeps the generated trie materially smaller than a naive JSON object tree while still supporting prefix lookup directly in the browser.

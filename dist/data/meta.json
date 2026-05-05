@@ -12,7 +12,7 @@
   "trie": {
     "nodeCount": 316446,
     "edgeCount": 316445,
-    "payloadCount": 578395,
+    "payloadCount": 483300,
     "headerSize": 16,
     "nodeSize": 14,
     "edgeSize": 5,

@@ -7,7 +7,26 @@ const trie_header_size = 16;
 const trie_node_size = 14;
 const trie_edge_size = 5;
 const trie_payload_index_size = 3;
+const trie_payload_range_marker: u32 = 0x800000;
+const trie_payload_value_mask: u32 = 0x7fffff;
+const min_payload_range_len = 4;
 const entries_header_size = 8;
+
+const ranged_trie_terms = [_][]const u8{
+    "cjk", "unified", "syllable", "hangul", "letter", "tangut", "egyptian", "sign",
+    "small", "with", "capital", "hieroglyph", "latin", "arabic", "yi", "cuneiform",
+    "symbol", "mathematical", "compatibility", "digit", "vowel", "form", "a",
+    "canadian", "syllabics", "signwriting", "times", "bamum", "and", "arrow",
+    "right", "script", "left", "bold", "anatolian", "combining", "ligature",
+    "number", "linear", "greek", "ethiopic", "musical", "cyrillic", "block",
+    "old", "above", "khitan", "for", "square", "mark", "italic", "one", "u",
+    "tai", "nushu", "circled", "sans", "serif", "radical", "double", "final",
+    "two", "o", "modifier", "black", "e", "i", "below", "three", "dot", "white",
+    "vai", "to", "b", "hentaigana", "lower", "variation", "pattern", "braille",
+    "middle", "upper", "of", "byzantine", "stroke", "myanmar", "four", "katakana",
+    "isolated", "vertical", "heavy", "half", "hook", "five", "kangxi", "mende",
+    "kikakui", "ka", "tibetan", "rightwards", "initial", "box",
+};
 
 const BlockRange = struct {
     start: u32,
@@ -321,6 +340,8 @@ fn buildTrie(
             }
         }.lessThan);
     }
+
+    try compressRangedTriePayloads(allocator, trie_nodes);
 }
 
 fn collectTerms(
@@ -396,6 +417,60 @@ fn appendPayload(allocator: std.mem.Allocator, payload: *std.ArrayList(u32), val
         if (existing == value) return;
     }
     try payload.append(allocator, value);
+}
+
+fn compressRangedTriePayloads(allocator: std.mem.Allocator, trie_nodes: *std.ArrayList(TrieNodeBuilder)) !void {
+    for (ranged_trie_terms) |term| {
+        const node_index = findTrieNode(trie_nodes.items, term) orelse continue;
+        try compressPayloadRanges(allocator, &trie_nodes.items[node_index].payload);
+    }
+}
+
+fn findTrieNode(nodes: []const TrieNodeBuilder, term: []const u8) ?u32 {
+    var node_index: u32 = 0;
+    for (term) |ch| {
+        var next_index: ?u32 = null;
+        for (nodes[node_index].children.items) |edge| {
+            if (edge.ch == ch) {
+                next_index = edge.target;
+                break;
+            }
+        }
+        node_index = next_index orelse return null;
+    }
+    return node_index;
+}
+
+fn compressPayloadRanges(allocator: std.mem.Allocator, payload: *std.ArrayList(u32)) !void {
+    if (payload.items.len < min_payload_range_len) return;
+
+    var compressed: std.ArrayList(u32) = .{};
+    errdefer compressed.deinit(allocator);
+
+    var index: usize = 0;
+    while (index < payload.items.len) {
+        const start = payload.items[index];
+        var end = index + 1;
+        while (end < payload.items.len and payload.items[end] == payload.items[end - 1] + 1) {
+            end += 1;
+        }
+
+        const len = end - index;
+        if (len >= min_payload_range_len) {
+            if (start > trie_payload_value_mask or len > trie_payload_value_mask) {
+                return error.PayloadRangeTooLarge;
+            }
+            try compressed.append(allocator, trie_payload_range_marker | start);
+            try compressed.append(allocator, @intCast(len));
+        } else {
+            try compressed.appendSlice(allocator, payload.items[index..end]);
+        }
+
+        index = end;
+    }
+
+    payload.deinit(allocator);
+    payload.* = compressed;
 }
 
 fn writeEntriesFile(allocator: std.mem.Allocator, out_dir: []const u8, entries: []const Entry) !void {

@@ -6,6 +6,8 @@ const status = document.querySelector("#status");
 const clearButton = document.querySelector("#clear");
 const EXCLUDED_PREFIX_TERMS = ["cjk", "unified"];
 const FALLBACK_RESULT_LIMIT = 32;
+const PAYLOAD_RANGE_MARKER = 0x800000;
+const PAYLOAD_VALUE_MASK = 0x7fffff;
 const supportsDecompressionStream = typeof DecompressionStream === "function";
 
 const state = {
@@ -275,7 +277,17 @@ function getNodePayload(view, meta, nodeIndex) {
 
   const results = [];
   for (let i = 0; i < payloadCount; i += 1) {
-    results.push(readUint24(view, payloadBase + (payloadStart + i) * meta.payloadIndexSize));
+    const value = readUint24(view, payloadBase + (payloadStart + i) * meta.payloadIndexSize);
+    if (value & PAYLOAD_RANGE_MARKER) {
+      i += 1;
+      const start = value & PAYLOAD_VALUE_MASK;
+      const length = readUint24(view, payloadBase + (payloadStart + i) * meta.payloadIndexSize);
+      for (let offset = 0; offset < length; offset += 1) {
+        results.push(start + offset);
+      }
+    } else {
+      results.push(value);
+    }
   }
   return results;
 }
