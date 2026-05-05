@@ -4,7 +4,7 @@ const queryInput = document.querySelector("#query");
 const resultsList = document.querySelector("#results");
 const status = document.querySelector("#status");
 const clearButton = document.querySelector("#clear");
-const EXCLUDED_PREFIX_TERMS = ["cjk", "unified"];
+const EXCLUDED_PREFIX_TERMS = [];
 const FALLBACK_RESULT_LIMIT = 32;
 const supportsDecompressionStream = typeof DecompressionStream === "function";
 

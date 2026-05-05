@@ -10,9 +10,9 @@
     "compression": "gzip"
   },
   "trie": {
-    "nodeCount": 316446,
-    "edgeCount": 316445,
-    "payloadCount": 479604,
+    "nodeCount": 316451,
+    "edgeCount": 316450,
+    "payloadCount": 479610,
     "headerSize": 16,
     "nodeSize": 14,
     "edgeSize": 5,
@@ -22,7 +22,7 @@
     "compression": "gzip"
   },
   "trieRanges": {
-    "count": 1848,
+    "count": 1860,
     "file": "trie-ranges.txt"
   },
   "strings": {

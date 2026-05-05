@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const result_limit = 32;
-const excluded_trie_terms = [_][]const u8{ "cjk", "unified" };
+const excluded_trie_terms = [_][]const u8{};
 const entry_record_size = 28;
 const trie_header_size = 16;
 const trie_node_size = 14;
