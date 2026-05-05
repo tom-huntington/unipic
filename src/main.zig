@@ -7,7 +7,6 @@ const trie_header_size = 16;
 const trie_node_size = 14;
 const trie_edge_size = 5;
 const trie_payload_index_size = 3;
-const trie_payload_range_marker: u32 = 0x800000;
 const trie_payload_value_mask: u32 = 0x7fffff;
 const min_payload_range_len = 4;
 const entries_header_size = 8;
@@ -55,6 +54,12 @@ const TrieEdgeBuilder = struct {
 const TrieNodeBuilder = struct {
     children: std.ArrayList(TrieEdgeBuilder),
     payload: std.ArrayList(u32),
+};
+
+const RangedTriePayload = struct {
+    node_index: u32,
+    start: u32,
+    len: u32,
 };
 
 pub fn main() !void {
@@ -105,11 +110,15 @@ pub fn main() !void {
         .payload = .{},
     });
 
-    try buildTrie(arena_allocator, allocator, &entries, &trie_nodes);
+    var ranged_payloads: std.ArrayList(RangedTriePayload) = .{};
+    defer ranged_payloads.deinit(allocator);
+
+    try buildTrie(arena_allocator, allocator, &entries, &trie_nodes, &ranged_payloads);
 
     try writeEntriesFile(allocator, out_dir, entries.items);
     try writeTrieFile(allocator, out_dir, trie_nodes.items);
-    try writeMetaFile(allocator, out_dir, entries.items.len, trie_nodes.items);
+    try writeRangedTriePayloadsFile(allocator, out_dir, ranged_payloads.items);
+    try writeMetaFile(allocator, out_dir, entries.items.len, trie_nodes.items, ranged_payloads.items.len);
 
     std.debug.print(
         "Generated {d} entries and {d} trie nodes into {s}\n",
@@ -318,6 +327,7 @@ fn buildTrie(
     allocator: std.mem.Allocator,
     entries: *std.ArrayList(Entry),
     trie_nodes: *std.ArrayList(TrieNodeBuilder),
+    ranged_payloads: *std.ArrayList(RangedTriePayload),
 ) !void {
     for (entries.items, 0..) |entry, index| {
         var unique_terms: std.ArrayList([]const u8) = .{};
@@ -341,7 +351,7 @@ fn buildTrie(
         }.lessThan);
     }
 
-    try compressRangedTriePayloads(allocator, trie_nodes);
+    try extractRangedTriePayloads(allocator, trie_nodes, ranged_payloads);
 }
 
 fn collectTerms(
@@ -419,10 +429,14 @@ fn appendPayload(allocator: std.mem.Allocator, payload: *std.ArrayList(u32), val
     try payload.append(allocator, value);
 }
 
-fn compressRangedTriePayloads(allocator: std.mem.Allocator, trie_nodes: *std.ArrayList(TrieNodeBuilder)) !void {
+fn extractRangedTriePayloads(
+    allocator: std.mem.Allocator,
+    trie_nodes: *std.ArrayList(TrieNodeBuilder),
+    ranged_payloads: *std.ArrayList(RangedTriePayload),
+) !void {
     for (ranged_trie_terms) |term| {
         const node_index = findTrieNode(trie_nodes.items, term) orelse continue;
-        try compressPayloadRanges(allocator, &trie_nodes.items[node_index].payload);
+        try extractPayloadRanges(allocator, @intCast(node_index), &trie_nodes.items[node_index].payload, ranged_payloads);
     }
 }
 
@@ -441,11 +455,16 @@ fn findTrieNode(nodes: []const TrieNodeBuilder, term: []const u8) ?u32 {
     return node_index;
 }
 
-fn compressPayloadRanges(allocator: std.mem.Allocator, payload: *std.ArrayList(u32)) !void {
+fn extractPayloadRanges(
+    allocator: std.mem.Allocator,
+    node_index: u32,
+    payload: *std.ArrayList(u32),
+    ranged_payloads: *std.ArrayList(RangedTriePayload),
+) !void {
     if (payload.items.len < min_payload_range_len) return;
 
-    var compressed: std.ArrayList(u32) = .{};
-    errdefer compressed.deinit(allocator);
+    var remaining: std.ArrayList(u32) = .{};
+    errdefer remaining.deinit(allocator);
 
     var index: usize = 0;
     while (index < payload.items.len) {
@@ -460,17 +479,20 @@ fn compressPayloadRanges(allocator: std.mem.Allocator, payload: *std.ArrayList(u
             if (start > trie_payload_value_mask or len > trie_payload_value_mask) {
                 return error.PayloadRangeTooLarge;
             }
-            try compressed.append(allocator, trie_payload_range_marker | start);
-            try compressed.append(allocator, @intCast(len));
+            try ranged_payloads.append(allocator, .{
+                .node_index = node_index,
+                .start = start,
+                .len = @intCast(len),
+            });
         } else {
-            try compressed.appendSlice(allocator, payload.items[index..end]);
+            try remaining.appendSlice(allocator, payload.items[index..end]);
         }
 
         index = end;
     }
 
     payload.deinit(allocator);
-    payload.* = compressed;
+    payload.* = remaining;
 }
 
 fn writeEntriesFile(allocator: std.mem.Allocator, out_dir: []const u8, entries: []const Entry) !void {
@@ -561,11 +583,33 @@ fn writeTrieFile(allocator: std.mem.Allocator, out_dir: []const u8, nodes: []con
     });
 }
 
+fn writeRangedTriePayloadsFile(
+    allocator: std.mem.Allocator,
+    out_dir: []const u8,
+    ranged_payloads: []const RangedTriePayload,
+) !void {
+    const path = try std.fs.path.join(allocator, &.{ out_dir, "trie-ranges.txt" });
+    defer allocator.free(path);
+
+    var text: std.ArrayList(u8) = .{};
+    defer text.deinit(allocator);
+
+    for (ranged_payloads) |range| {
+        try text.writer(allocator).print("{d} {d} {d}\n", .{ range.node_index, range.start, range.len });
+    }
+
+    try std.fs.cwd().writeFile(.{
+        .sub_path = path,
+        .data = text.items,
+    });
+}
+
 fn writeMetaFile(
     allocator: std.mem.Allocator,
     out_dir: []const u8,
     entry_count: usize,
     nodes: []const TrieNodeBuilder,
+    ranged_payload_count: usize,
 ) !void {
     var edge_count: usize = 0;
     var payload_count: usize = 0;
@@ -601,6 +645,10 @@ fn writeMetaFile(
         \\    "fallbackFile": "trie.bin",
         \\    "compression": "gzip"
         \\  }},
+        \\  "trieRanges": {{
+        \\    "count": {d},
+        \\    "file": "trie-ranges.txt"
+        \\  }},
         \\  "strings": {{
         \\    "file": "strings.bin.gz",
         \\    "fallbackFile": "strings.bin",
@@ -619,6 +667,7 @@ fn writeMetaFile(
         trie_node_size,
         trie_edge_size,
         trie_payload_index_size,
+        ranged_payload_count,
     });
     defer allocator.free(json);
 

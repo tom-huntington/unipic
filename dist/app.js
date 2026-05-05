@@ -6,13 +6,12 @@ const status = document.querySelector("#status");
 const clearButton = document.querySelector("#clear");
 const EXCLUDED_PREFIX_TERMS = ["cjk", "unified"];
 const FALLBACK_RESULT_LIMIT = 32;
-const PAYLOAD_RANGE_MARKER = 0x800000;
-const PAYLOAD_VALUE_MASK = 0x7fffff;
 const supportsDecompressionStream = typeof DecompressionStream === "function";
 
 const state = {
   meta: null,
   trieBuffer: null,
+  trieRanges: new Map(),
   entriesBuffer: null,
   stringsBuffer: null,
   activeIndex: -1,
@@ -29,9 +28,11 @@ async function init() {
       fetchDataBuffer(meta.entries),
       fetchDataBuffer(meta.strings),
     ]);
+    const trieRanges = await fetchTrieRanges(meta.trieRanges);
 
     state.meta = meta;
     state.trieBuffer = trieBuffer;
+    state.trieRanges = trieRanges;
     state.entriesBuffer = entriesBuffer;
     state.stringsBuffer = stringsBuffer;
 
@@ -105,6 +106,40 @@ async function fetchDataBuffer(spec) {
 
   const fallbackFile = spec.fallbackFile ?? spec.file;
   return fetchBuffer(`./data/${fallbackFile}`);
+}
+
+async function fetchTrieRanges(spec) {
+  if (!spec || !spec.file) {
+    return new Map();
+  }
+
+  const response = await fetch(`./data/${spec.file}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${spec.file}`);
+  }
+
+  const ranges = new Map();
+  const text = await response.text();
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const [nodeIndexText, startText, lengthText] = line.split(/\s+/);
+    const nodeIndex = Number(nodeIndexText);
+    const start = Number(startText);
+    const length = Number(lengthText);
+    if (!Number.isSafeInteger(nodeIndex) || !Number.isSafeInteger(start) || !Number.isSafeInteger(length)) {
+      throw new Error(`Invalid trie range: ${line}`);
+    }
+
+    const nodeRanges = ranges.get(nodeIndex) ?? [];
+    nodeRanges.push([start, length]);
+    ranges.set(nodeIndex, nodeRanges);
+  }
+
+  return ranges;
 }
 
 async function fetchCompressedBuffer(url, compression) {
@@ -278,17 +313,19 @@ function getNodePayload(view, meta, nodeIndex) {
   const results = [];
   for (let i = 0; i < payloadCount; i += 1) {
     const value = readUint24(view, payloadBase + (payloadStart + i) * meta.payloadIndexSize);
-    if (value & PAYLOAD_RANGE_MARKER) {
-      i += 1;
-      const start = value & PAYLOAD_VALUE_MASK;
-      const length = readUint24(view, payloadBase + (payloadStart + i) * meta.payloadIndexSize);
+    results.push(value);
+  }
+
+  const ranges = state.trieRanges.get(nodeIndex);
+  if (ranges) {
+    for (const [start, length] of ranges) {
       for (let offset = 0; offset < length; offset += 1) {
         results.push(start + offset);
       }
-    } else {
-      results.push(value);
     }
+    results.sort((a, b) => a - b);
   }
+
   return results;
 }
 

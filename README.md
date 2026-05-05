@@ -41,6 +41,6 @@ It emits a packed trie with:
 - 14-byte node records
 - 5-byte edge records
 - 3-byte payload values
-- range markers for selected high-frequency word payloads
+- a text sidecar for selected high-frequency word payload ranges
 
 That keeps the generated trie materially smaller than a naive JSON object tree while still supporting prefix lookup directly in the browser.
