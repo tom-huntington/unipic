@@ -7,6 +7,7 @@ const clearButton = document.querySelector("#clear");
 const EXCLUDED_PREFIX_TERMS = [];
 const FALLBACK_RESULT_LIMIT = 32;
 const supportsDecompressionStream = typeof DecompressionStream === "function";
+const embeddedData = globalThis.UNICODE_EMBEDDED_DATA ?? null;
 
 const state = {
   meta: null,
@@ -22,7 +23,7 @@ void init();
 
 async function init() {
   try {
-    const meta = await fetchJson("./data/meta.json");
+    const meta = await loadMeta();
     const [trieBuffer, entriesBuffer, stringsBuffer] = await Promise.all([
       fetchDataBuffer(meta.trie),
       fetchDataBuffer(meta.entries),
@@ -44,6 +45,13 @@ async function init() {
     console.error(error);
     status.textContent = "Failed to load the Unicode dataset.";
   }
+}
+
+async function loadMeta() {
+  if (embeddedData?.meta) {
+    return embeddedData.meta;
+  }
+  return fetchJson("./data/meta.json");
 }
 
 queryInput.addEventListener("input", () => {
@@ -93,6 +101,11 @@ async function fetchBuffer(url) {
 }
 
 async function fetchDataBuffer(spec) {
+  const embeddedBuffer = readEmbeddedBinary(spec?.fallbackFile ?? spec?.file);
+  if (embeddedBuffer) {
+    return embeddedBuffer;
+  }
+
   if (spec.compression && supportsDecompressionStream) {
     try {
       return await fetchCompressedBuffer(`./data/${spec.file}`, spec.compression);
@@ -113,13 +126,22 @@ async function fetchTrieRanges(spec) {
     return new Map();
   }
 
+  const embeddedText = readEmbeddedText(spec.file);
+  if (embeddedText != null) {
+    return parseTrieRanges(embeddedText);
+  }
+
   const response = await fetch(`./data/${spec.file}`);
   if (!response.ok) {
     throw new Error(`Failed to fetch ${spec.file}`);
   }
 
-  const ranges = new Map();
   const text = await response.text();
+  return parseTrieRanges(text);
+}
+
+function parseTrieRanges(text) {
+  const ranges = new Map();
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) {
@@ -140,6 +162,32 @@ async function fetchTrieRanges(spec) {
   }
 
   return ranges;
+}
+
+function readEmbeddedBinary(fileName) {
+  const b64 = embeddedData?.files?.[fileName];
+  if (!b64) {
+    return null;
+  }
+  return decodeBase64ToArrayBuffer(b64);
+}
+
+function readEmbeddedText(fileName) {
+  const b64 = embeddedData?.files?.[fileName];
+  if (!b64) {
+    return null;
+  }
+  const bytes = new Uint8Array(decodeBase64ToArrayBuffer(b64));
+  return decoder.decode(bytes);
+}
+
+function decodeBase64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
 }
 
 async function fetchCompressedBuffer(url, compression) {
