@@ -37,7 +37,17 @@ pub fn build(b: *std.Build) void {
             out_dir,
         });
         compress.step.dependOn(&run.step);
-        run_step.dependOn(&compress.step);
+        const embed = b.addSystemCommand(&.{
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "scripts/generate-embedded-data.ps1",
+            "dist",
+        });
+        embed.step.dependOn(&compress.step);
+        run_step.dependOn(&embed.step);
     } else {
         run_step.dependOn(&run.step);
     }

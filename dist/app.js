@@ -101,9 +101,25 @@ async function fetchBuffer(url) {
 }
 
 async function fetchDataBuffer(spec) {
-  const embeddedBuffer = readEmbeddedBinary(spec?.fallbackFile ?? spec?.file);
-  if (embeddedBuffer) {
-    return embeddedBuffer;
+  if (!spec) {
+    throw new Error("Missing data spec");
+  }
+
+  if (spec.compression) {
+    const embeddedCompressed = readEmbeddedBinary(spec.file);
+    if (embeddedCompressed) {
+      if (supportsDecompressionStream) {
+        return decompressBuffer(embeddedCompressed, spec.compression);
+      }
+      if (!spec.fallbackFile) {
+        throw new Error(`Embedded compressed data requires DecompressionStream: ${spec.file}`);
+      }
+    }
+  } else {
+    const embeddedPlain = readEmbeddedBinary(spec.file);
+    if (embeddedPlain) {
+      return embeddedPlain;
+    }
   }
 
   if (spec.compression && supportsDecompressionStream) {
